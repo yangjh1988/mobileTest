@@ -19,7 +19,8 @@ class BookingDataManager {
     ///
     /// - Returns: A publisher emitting `Booking` or an `Error`.
     func bookingPublisher() -> AnyPublisher<Booking, Error> {
-        let freshPublisher = Deferred {
+        let freshPublisher =
+        Deferred {
             Future<Booking, Error> { promise in
                 Task {
                     do {
@@ -33,10 +34,10 @@ class BookingDataManager {
         }
 
         if let cached = service.getCachedBooking() {
-            let cachedPub = Just(cached)
+            let cachedPub = Just(cached.booking)
                 .setFailureType(to: Error.self)
                 .eraseToAnyPublisher()
-            if !cached.isExpired {
+            if !cached.isExpired() {
                 return cachedPub
             }
             return cachedPub
@@ -76,11 +77,6 @@ struct Booking: Codable {
     let expiryTime: String
     let duration: Int
     var segments: [Segment]
-
-    /// Returns true if the current time has passed the booking's expiryTime.
-    var isExpired: Bool {
-        (Date().timeIntervalSince1970 - (TimeInterval(expiryTime) ?? 0)) > 60 * 5
-    }
     
     /// Generates a mock `Booking` instance with sample data.
     ///
@@ -141,6 +137,16 @@ enum BookingServiceError: Error {
     case businessError(code: Int, message: String?)
 }
 
+struct BookingCache: Codable {
+    let timestamp: TimeInterval
+    let booking: Booking
+    
+    func isExpired() -> Bool {
+        return true
+//        return Date().timeIntervalSince1970 - timestamp > 60 * 5
+    }
+}
+
 /// Caches `Booking` data to a local file in the caches directory.
 class BookingDataCache {
     /// Singleton instance for file-based booking cache.
@@ -149,29 +155,26 @@ class BookingDataCache {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return dir.appendingPathComponent("booking_cache.json")
     }()
-    private var booking: Booking?
+    /// momery cache
+    private var cached: BookingCache?
     private init() {}
-
-    /// Loads a cached `Booking` from disk.
-    ///
-    /// - Returns: The cached `Booking`, or `nil` if not available.
-    func load() -> Booking? {
-        if let booking = self.booking { return booking }
-        guard let data = try? Data(contentsOf: fileURL),
-              let booking = try? JSONDecoder().decode(Booking.self, from: data) else {
-            return nil
+    private func loadCached() -> BookingCache? {
+        if let cached = self.cached {
+            return cached
         }
-        self.booking = booking
-        return booking
+        guard let data = try? Data(contentsOf: fileURL),
+              let cached = try? JSONDecoder().decode(BookingCache.self, from: data) else { return nil }
+        self.cached = cached
+        return cached
     }
-
-    /// Saves a `Booking` instance to disk.
-    ///
-    /// - Parameter booking: The `Booking` to cache.
-    func save(_ booking: Booking?) {
-        guard let booking = booking,
-              let data = try? JSONEncoder().encode(booking) else { return }
-        self.booking = booking
+    func load() -> BookingCache? {
+        loadCached()
+    }
+    
+    func save(_ booking: Booking) {
+        let cached = BookingCache(timestamp: Date().timeIntervalSince1970, booking: booking)
+        self.cached = cached
+        guard let data = try? JSONEncoder().encode(cached) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
 }
@@ -185,7 +188,7 @@ class BookingService {
     /// Retrieves a cached booking if available.
     ///
     /// - Returns: The cached `Booking`, or `nil` if none.
-    func getCachedBooking() -> Booking? {
+    func getCachedBooking() -> BookingCache? {
         BookingDataCache.shared.load()
     }
 
