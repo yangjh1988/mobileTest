@@ -142,8 +142,8 @@ struct BookingCache: Codable {
     let booking: Booking
     
     func isExpired() -> Bool {
-        return true
-//        return Date().timeIntervalSince1970 - timestamp > 60 * 5
+//        return true
+        return Date().timeIntervalSince1970 - timestamp > 60 * 5
     }
 }
 
@@ -162,6 +162,7 @@ class BookingDataCache {
         if let cached = self.cached {
             return cached
         }
+        
         guard let data = try? Data(contentsOf: fileURL),
               let cached = try? JSONDecoder().decode(BookingCache.self, from: data) else { return nil }
         self.cached = cached
